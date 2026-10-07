@@ -1,10 +1,15 @@
-# Water Segmentation using Multispectral Data
+# Water Segmentation using Multispectral and Optical Data
 
 ## Project Overview
 
-This project focuses on binary water segmentation from multispectral and remote-sensing imagery using a U-Net model implemented from scratch in PyTorch.
+This project focuses on binary water segmentation using 12-channel multispectral and auxiliary remote-sensing data.
 
-The dataset contains 12 input channels for each image, including multispectral bands and additional remote-sensing information. The goal is to classify each pixel as either water or non-water.
+The main objective is to develop a U-Net-based segmentation system that takes 12-channel image patches as input and predicts a binary water mask at pixel level.
+
+The project was developed in two stages:
+
+- **Week 1:** U-Net implemented from scratch
+- **Week 2:** Pretrained ResNet34 encoder with a U-Net decoder
 
 ## Dataset
 
@@ -22,7 +27,7 @@ The dataset was split into:
 - Validation: 46 images
 - Test: 46 images
 
-The split was stratified according to whether an image contains water.
+The same fixed split was used for all experiments to ensure a fair comparison.
 
 ## Input Data
 
@@ -43,93 +48,169 @@ The 12 input channels are:
 
 The data were normalized using training-set statistics separately for each channel.
 
-Missing values in the MERIT DEM channel were handled during preprocessing.
+Invalid values in the MERIT DEM channel were handled during preprocessing.
 
-## Data Preprocessing
-
-The preprocessing pipeline includes:
-
-- Loading the 12-channel TIFF images
-- Handling invalid values
-- Per-channel normalization using training-set statistics
-- Converting images from `(H, W, C)` to `(C, H, W)`
-- Producing tensors with shape `(12, 128, 128)`
-- Converting binary masks to tensors with shape `(1, 128, 128)`
-
-Training augmentation includes spatial transformations such as horizontal flips, vertical flips, and 90-degree rotations.
-
-## Model
+## Week 1 — Scratch U-Net
 
 A U-Net architecture was implemented from scratch in PyTorch.
 
-The model uses:
+The baseline model uses:
 
 - 12 input channels
 - Encoder-decoder architecture
 - Skip connections
 - Batch normalization
 - ReLU activations
-- A single output channel for binary segmentation
+- One output channel for binary segmentation
 - No pretrained weights
 
-The baseline model contains approximately 31 million trainable parameters.
+The model contains approximately 31 million trainable parameters.
+
+### Week 1 Experiments
+
+Several experiments were tested:
+
+- Baseline U-Net with BCE loss
+- MNDWI feature + U-Net
+- Dice + BCE loss
+- Weighted BCE + Dice loss
+
+The baseline U-Net was selected as the main reference model.
+
+## Week 2 — Pretrained Segmentation Model
+
+Week 2 extends the Week 1 pipeline using a pretrained segmentation backbone.
+
+A **ResNet34 encoder with a U-Net decoder** was implemented using `segmentation-models-pytorch`.
+
+### Pretrained Encoder Adaptation
+
+The original ResNet34 first convolution is designed for 3-channel RGB input.
+
+To support the 12-channel dataset, the first convolution was explicitly adapted from 3 input channels to 12 input channels.
+
+The original pretrained weights for the first three channels were preserved, while the additional nine channels were initialized using the mean of the pretrained RGB convolution weights.
+
+The resulting first convolution accepts:
+
+```text
+12 input channels → 64 output channels
+```
+
+### Fine-tuning
+
+The pretrained U-Net was fine-tuned on the same training set and evaluated using the same validation and test sets as the Week 1 baseline.
+
+The optimization setup used:
+
+- Binary Cross-Entropy with Logits loss
+- Adam optimizer
+- Learning rate: 1e-4
+- Maximum epochs: 20
+- Early stopping based on validation IoU
 
 ## Evaluation Metrics
 
-The model was evaluated using metrics focused on the water class:
+Performance was evaluated on the water class using:
 
 - Intersection over Union (IoU)
 - Precision
 - Recall
 - F1-score
 
-## Experiments
+A prediction threshold of 0.50 was used.
 
-Several experiments were performed:
+## Final Comparison
 
-### 1. Baseline U-Net
+| Model | Validation IoU | Test IoU | Test Precision | Test Recall | Test F1 |
+|---|---:|---:|---:|---:|---:|
+| Scratch U-Net | 0.7133 | 0.7750 | 0.9175 | 0.8330 | 0.8732 |
+| Pretrained ResNet34 + U-Net | **0.7257** | 0.7330 | 0.8656 | 0.8271 | 0.8459 |
 
-The baseline uses the original 12 input channels with BCE loss.
+The pretrained model achieved a higher validation IoU than the Week 1 scratch U-Net:
 
-### 2. MNDWI Feature
+**0.7257 vs. 0.7133**
 
-MNDWI was calculated from the Green and SWIR1 bands and added as an additional input feature.
+This satisfies the requirement of achieving a measurable improvement in validation IoU.
 
-This experiment improved validation performance slightly but did not improve performance on the held-out test set.
+However, the scratch U-Net achieved better performance on the held-out test set.
 
-### 3. Dice + BCE Loss
+## Week 1 Additional Experiments
 
-A combined Dice and Binary Cross-Entropy loss was tested to improve segmentation performance.
+### MNDWI Feature
 
-The resulting test performance was very close to the baseline.
+MNDWI was calculated from the Green and SWIR1 bands and added as an additional feature.
 
-### 4. Weighted BCE + Dice
+| Metric | Result |
+|---|---:|
+| Validation IoU | 0.7177 |
+| Test IoU | 0.7516 |
+| Test Precision | 0.8621 |
+| Test Recall | 0.8543 |
+| Test F1 | 0.8582 |
 
-A weighted BCE component was combined with Dice loss to increase attention to the water class.
+MNDWI improved validation performance slightly compared with the baseline, but did not improve test-set performance.
 
-This increased recall but also produced more false-positive predictions and resulted in lower validation IoU.
+### Dice + BCE
 
-## Final Results
+A combined Dice + BCE loss was also evaluated.
 
-| Experiment | Input | Validation IoU | Test IoU | Test Precision | Test Recall | Test F1 |
-|---|---|---:|---:|---:|---:|---:|
-| Baseline U-Net | 12 bands | 0.7133 | 0.7750 | 0.9175 | 0.8330 | 0.8732 |
-| MNDWI + U-Net | 12 bands + MNDWI | 0.7177 | 0.7516 | 0.8621 | 0.8543 | 0.8582 |
-| Dice + BCE | 12 bands | 0.7201 | 0.7756 | 0.9154 | 0.8355 | 0.8736 |
-| Weighted BCE + Dice | 12 bands | 0.6805 | — | — | — | — |
+| Metric | Result |
+|---|---:|
+| Validation IoU | 0.7201 |
+| Test IoU | 0.7756 |
+| Test Precision | 0.9154 |
+| Test Recall | 0.8355 |
+| Test F1 | 0.8736 |
 
-The default prediction threshold of 0.50 was retained based on validation-set threshold analysis.
+The results were very close to the baseline U-Net.
+
+### Weighted BCE + Dice
+
+Weighted BCE + Dice increased attention to the water class.
+
+| Metric | Result |
+|---|---:|
+| Validation IoU | 0.6805 |
+
+The experiment increased recall but also produced more false-positive predictions and therefore reduced validation IoU.
 
 ## Error Analysis
 
-Error analysis showed that the main remaining difficulty is detecting thin, small, and low-area water regions.
+Visual error analysis showed that both the scratch and pretrained models can identify the main water structures in several images.
 
-These regions were frequently missed by both the baseline model and the Dice + BCE experiment.
+However, both models struggle with:
 
-## Conclusion
+- Thin water channels
+- Small water bodies
+- Low-area water regions
+- Difficult or low-contrast water structures
 
-This project developed a U-Net model from scratch for binary water segmentation using 12-channel multispectral and auxiliary remote-sensing data.
+The pretrained model did not show a consistent qualitative advantage over the scratch U-Net.
 
-The baseline model achieved a test IoU of 0.7750 and a test F1-score of 0.8732. The experiments showed that adding MNDWI as an additional feature improved validation performance but did not improve performance on the held-out test set. The Dice + BCE loss produced performance very close to the baseline, while the weighted BCE + Dice experiment increased recall but reduced validation IoU because of increased false-positive predictions.
+## Week 2 Conclusion
 
-Overall, the experiments demonstrate that the 12-channel U-Net provides a strong baseline for this dataset, while the tested feature-engineering and loss-function modifications did not provide a consistent improvement on the test set.
+In Week 2, a pretrained ResNet34 encoder with a U-Net decoder was fine-tuned for 12-channel water segmentation. The original ImageNet-pretrained first convolution was adapted from 3 input channels to 12 channels using weight averaging for the additional channels.
+
+The pretrained U-Net achieved a validation IoU of **0.7257**, compared with **0.7133** for the Week 1 scratch U-Net. Therefore, the pretrained approach achieved a measurable improvement in validation IoU and satisfied the main performance requirement of this week.
+
+However, on the held-out test set, the scratch U-Net achieved a higher IoU (**0.7750**) and F1-score (**0.8732**) than the pretrained U-Net (**0.7330 IoU** and **0.8459 F1**). This shows that the improvement on the validation set did not translate into better test-set generalization.
+
+The results suggest that ImageNet pretraining provided useful initialization for the multispectral segmentation task, but adapting RGB-pretrained features to 12-channel multispectral and auxiliary data does not necessarily guarantee better generalization.
+
+## Overall Conclusion
+
+This project successfully developed and evaluated both a scratch U-Net and a pretrained ResNet34 + U-Net model for 12-channel water segmentation.
+
+The 12-channel scratch U-Net provides a strong baseline for the dataset, while the pretrained ResNet34 + U-Net demonstrates how a pretrained segmentation backbone can be adapted to multispectral input.
+
+Although the pretrained model achieved a higher validation IoU, it did not outperform the scratch model on the held-out test set. The additional Week 1 experiments with MNDWI and different loss functions also did not provide a consistent improvement over the baseline.
+
+Overall, the experiments highlight the importance of evaluating segmentation models on a held-out test set rather than relying only on validation performance.
+
+## References
+
+- He, K., Zhang, X., Ren, S., & Sun, J. (2016). *Deep Residual Learning for Image Recognition.* https://arxiv.org/abs/1512.03385
+- Chen, L.-C., et al. (2016). *DeepLab: Semantic Image Segmentation with Deep Convolutional Nets, Atrous Convolution, and Fully Connected CRFs.* https://arxiv.org/abs/1606.00915
+- Segmentation Models PyTorch documentation: https://smp.readthedocs.io/
+- Segmentation Models PyTorch GitHub: https://github.com/qubvel-org/segmentation_models.pytorch
