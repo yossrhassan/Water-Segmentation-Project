@@ -68,15 +68,60 @@ def home():
                 The model will return a binary water mask.
             </p>
 
-            <form action="/predict" method="post"
-                  enctype="multipart/form-data" target="result_frame">
-                <input type="file" name="image"
-                       accept=".tif,.tiff" required>
-                <button type="submit">Predict Water Mask</button>
-            </form>
+            <form id="predict_form" action="/predict" method="post"
+      enctype="multipart/form-data">
+    <input type="file" name="image"
+           accept=".tif,.tiff" required>
+    <button type="submit">Predict Water Mask</button>
+</form>
 
-            <h2>Prediction Result</h2>
-            <iframe name="result_frame" title="Segmentation result"></iframe>
+<h2>Prediction Result</h2>
+<p id="status">Upload a TIFF image to see the result.</p>
+
+<img id="result_image"
+     alt="Predicted water mask"
+     style="display:none; width:100%; max-width:512px; height:auto; image-rendering:pixelated; border:1px solid #ddd;">
+
+<script>
+const form = document.getElementById("predict_form");
+const resultImage = document.getElementById("result_image");
+const statusText = document.getElementById("status");
+
+let previousImageUrl = null;
+
+form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    statusText.textContent = "Processing image...";
+    resultImage.style.display = "none";
+
+    try {
+        const response = await fetch("/predict", {
+            method: "POST",
+            body: new FormData(form)
+        });
+
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.error || "Prediction failed.");
+        }
+
+        const blob = await response.blob();
+
+        if (previousImageUrl) {
+            URL.revokeObjectURL(previousImageUrl);
+        }
+
+        previousImageUrl = URL.createObjectURL(blob);
+        resultImage.src = previousImageUrl;
+        resultImage.style.display = "block";
+        statusText.textContent = "Prediction complete.";
+
+    } catch (error) {
+        statusText.textContent = error.message;
+    }
+});
+</script>
         </div>
     </body>
     </html>
